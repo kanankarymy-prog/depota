@@ -2,191 +2,156 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import time
-import random
+from typing import List, Tuple
+import pyperclip
+import re
 
-# تنظیمات صفحه
-st.set_page_config(page_title="Web Scraper", page_icon="🌐", layout="wide")
+def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[Tuple[str, str]], str, int, str, dict]:
+    """
+    Fetch the webpage and extract headings, title, HTTP status code, meta description, and keyword counts.
+    Returns total count, per-level counts, list of (tag, text) for structure, page title, status code, meta description, and keyword counts.
+    """
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        status_code = response.status_code
+        soup = BeautifulSoup(response.text, 'html.parser')
+        headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        page_title = soup.find('title').text.strip() if soup.find('title') else "No Title"
+        
+        meta_desc_tag = soup.find('meta', attrs={'name': 'description'})
+        meta_desc = meta_desc_tag['content'].strip() if meta_desc_tag and 'content' in meta_desc_tag.attrs else "No Meta Description"
+        
+        counts = {'H1': 0, 'H2': 0, 'H3': 0, 'H4': 0, 'H5': 0, 'H6': 0}
+        total = 0
+        structure = []
+        
+        for h in headings:
+            tag = h.name.upper()
+            if tag in counts:
+                counts[tag] += 1
+                total += 1
+                structure.append((tag, h.text.strip()))
+        
+        # Count keywords if provided
+        keyword_counts = {}
+        if keywords:
+            text_content = soup.get_text().lower()
+            for keyword in keywords:
+                if keyword.strip():
+                    # Count occurrences using regex for whole words
+                    pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                    count = len(re.findall(pattern, text_content))
+                    keyword_counts[keyword] = count
+        
+        return total, counts, structure, page_title, status_code, meta_desc, keyword_counts
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching {url}: {str(e)}")
+        return 0, {}, [], "Error", getattr(e.response, 'status_code', 0), "Error", {}
 
-# CSS برای زیبایی
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .success-box {
-        padding: 1rem;
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 0.5rem;
-        margin: 1rem 0;
-    }
-    .error-box {
-        padding: 1rem;
-        background-color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        border-radius: 0.5rem;
-        margin: 1rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="main-header">🌐 Web Scraper Pro</div>', unsafe_allow_html=True)
-
-def get_user_agent():
-    """لیست User-Agent های مختلف برای جلوگیری از بلاک شدن"""
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0'
-    ]
-    return random.choice(user_agents)
-
-def safe_request(url, max_retries=3):
-    """درخواست امن با قابلیت تکرار"""
-    headers = {
-        'User-Agent': get_user_agent(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-    }
+def build_tree(structure: List[Tuple[str, str]]) -> str:
+    """
+    Build a indented tree representation of headings.
+    Uses indentation to show nesting based on levels.
+    """
+    if not structure:
+        return "No headings found."
     
-    for attempt in range(max_retries):
+    tree = ""
+    min_level = min(int(tag[1]) for tag, _ in structure) if structure else 1
+    
+    for tag, text in structure:
+        level = int(tag[1]) - min_level
+        indent = "  " * level
+        tree += f"{indent}- {tag}: {text}\n"
+    
+    return tree
+
+st.set_page_config(layout="centered")  # Centered layout to make input narrower
+st.title("Heading Analyzer Tool")
+st.markdown("Enter multiple URLs (one per line) or upload an Excel file with URLs in column A to analyze their headings. This tool fetches webpages, counts headings, provides a tree view with copy functionality, HTTP status, and meta description.")
+
+# Text area for manual URLs
+urls_input = st.text_area("URLs (one per line):", height=200)
+
+# File uploader for Excel
+uploaded_file = st.file_uploader("Upload Excel file (.xlsx):", type=["xlsx"])
+
+# Keyword search option
+enable_keyword_search = st.checkbox("Enable keyword search")
+
+keywords = []
+if enable_keyword_search:
+    st.info("Enter up to 5 keywords to search for in the pages (one per line)")
+    keyword_input = st.text_area("Keywords:", height=100, placeholder="Enter one keyword per line\nExample:\nseo\ndigital marketing\nweb analytics")
+    if keyword_input:
+        keywords = [k.strip() for k in keyword_input.split("\n") if k.strip()][:5]  # Limit to 5 keywords
+
+if st.button("Analyze Headings"):
+    urls = []
+    
+    # Process manual input
+    if urls_input:
+        urls = [u.strip() for u in urls_input.split("\n") if u.strip()]
+    
+    # Process uploaded Excel
+    if uploaded_file:
         try:
-            # تأخیر تصادفی بین درخواست‌ها
-            if attempt > 0:
-                delay = random.uniform(2, 5)
-                time.sleep(delay)
-            
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            
-            # بررسی اینکه محتوای معتبر برگردانده شده
-            if response.status_code == 200 and len(response.content) > 1000:
-                return response
+            df_uploaded = pd.read_excel(uploaded_file)
+            if 'A' in df_uploaded.columns:  # Assuming column A is labeled as 'A' or first column
+                urls.extend(df_uploaded['A'].dropna().astype(str).tolist())
             else:
-                st.warning(f"Attempt {attempt + 1}: Content too short, retrying...")
+                st.warning("No column 'A' found in the Excel file. Using the first column instead.")
+                urls.extend(df_uploaded.iloc[:, 0].dropna().astype(str).tolist())
+            urls = list(set(urls))  # Remove duplicates if any
+        except Exception as e:
+            st.error(f"Error reading Excel file: {str(e)}")
+    
+    if not urls:
+        st.warning("Please enter at least one URL or upload a valid Excel file.")
+    else:
+        data = []
+        structures = {}
+        
+        with st.spinner("Analyzing URLs..."):
+            for url in urls:
+                total, counts, struct, page_title, status_code, meta_desc, keyword_counts = get_headings(url, keywords if enable_keyword_search else None)
+                row = {
+                    "URL": url,
+                    "Title": page_title,
+                    "HTTP Status": status_code,
+                    "Meta Description": meta_desc,
+                    "Total Headings": total,
+                    "H1": counts.get("H1", 0),
+                    "H2": counts.get("H2", 0),
+                    "H3": counts.get("H3", 0),
+                    "H4": counts.get("H4", 0),
+                    "H5": counts.get("H5", 0),
+                    "H6": counts.get("H6", 0)
+                }
                 
-        except requests.exceptions.Timeout:
-            st.warning(f"Attempt {attempt + 1}: Timeout occurred, retrying...")
-        except requests.exceptions.HTTPError as e:
-            st.error(f"Attempt {attempt + 1}: HTTP Error {e}")
-            return None
-        except requests.exceptions.RequestException as e:
-            st.warning(f"Attempt {attempt + 1}: Connection error: {e}")
-    
-    st.error(f"Failed to fetch URL after {max_retries} attempts")
-    return None
-
-def extract_article_data(html_content):
-    """استخراج داده‌های مقاله از محتوای HTML"""
-    soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # استخراج عنوان
-    title = soup.find('title')
-    title_text = title.get_text().strip() if title else "Title not found"
-    
-    # استخراج محتوای مقاله (با توجه به ساختار setare.com)
-    content_selectors = [
-        '.article-content',
-        '.content',
-        '.entry-content',
-        'article',
-        '.news-content',
-        '.story__content'
-    ]
-    
-    content = None
-    for selector in content_selectors:
-        content = soup.select_one(selector)
-        if content:
-            break
-    
-    # اگر محتوای خاصی پیدا نشد، از body استفاده کن
-    if not content:
-        content = soup.find('body')
-    
-    content_text = content.get_text().strip() if content else "Content not found"
-    
-    # پاکسازی متن
-    content_text = ' '.join(content_text.split()[:500])  # محدودیت کاراکتر
-    
-    return {
-        'title': title_text,
-        'content': content_text,
-        'success': True
-    }
-
-def main():
-    # sidebar برای تنظیمات
-    with st.sidebar:
-        st.header("⚙️ Settings")
-        max_retries = st.slider("Max Retries", 1, 5, 3)
-        timeout = st.slider("Timeout (seconds)", 10, 30, 15)
+                # Add keyword counts to row if enabled
+                if enable_keyword_search and keywords:
+                    for keyword in keywords:
+                        row[keyword] = keyword_counts.get(keyword, 0)
+                
+                data.append(row)
+                structures[url] = struct
         
-        st.header("ℹ️ About")
-        st.info("This app extracts article data from websites with anti-blocking features.")
-    
-    # بخش اصلی
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("📝 Enter URL")
-        url = st.text_input(
-            "Website URL",
-            value="https://setare.com/fa/news/754575/",
-            placeholder="https://example.com/article"
-        )
-        
-        if st.button("🚀 Extract Article Data", type="primary"):
-            if url:
-                with st.spinner("🔄 Fetching data..."):
-                    response = safe_request(url, max_retries)
-                    
-                    if response and response.status_code == 200:
-                        data = extract_article_data(response.content)
-                        
-                        if data['success']:
-                            st.markdown('<div class="success-box">✅ Data extracted successfully!</div>', unsafe_allow_html=True)
-                            
-                            st.subheader("📰 Article Title")
-                            st.write(data['title'])
-                            
-                            st.subheader("📖 Article Content")
-                            st.write(data['content'])
-                            
-                            # دکمه کپی کردن
-                            if st.button("📋 Copy Content"):
-                                st.code(data['content'], language='text')
-                                st.success("Content ready to copy!")
-                        else:
-                            st.markdown('<div class="error-box">❌ Failed to extract article data</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="error-box">❌ Failed to fetch URL</div>', unsafe_allow_html=True)
-            else:
-                st.warning("⚠️ Please enter a URL")
-    
-    with col2:
-        st.subheader("💡 Tips")
-        st.info("""
-        - Use reputable news websites
-        - Avoid sites with heavy anti-bot protection
-        - Some sites may block automated requests
-        - Try different URLs if one fails
-        """)
-        
-        st.subheader("✅ Supported Sites")
-        st.write("""
-        - Setare.com
-        - Most news websites
-        - Blogs and articles
-        """)
+        st.session_state['results'] = {'data': data, 'structures': structures}
 
-if __name__ == "__main__":
-    main()
+if 'results' in st.session_state and st.session_state['results'].get('data'):
+    df = pd.DataFrame(st.session_state['results']['data'])
+    st.subheader("Headings Summary Table")
+    st.dataframe(df, use_container_width=True, height=400)  # Larger table height
+    
+    st.subheader("Tree Views")
+    structures = st.session_state['results']['structures']
+    for url in structures.keys():
+        with st.expander(f"View Tree for {url}"):
+            structure = structures.get(url, [])
+            tree_text = build_tree(structure)
+            st.code(tree_text, language="markdown")
+            if st.button("Copy Full Tree", key=f"copy_full_{url}"):
+                pyperclip.copy(tree_text)
+                st.success("Copied full tree to clipboard!")
