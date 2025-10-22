@@ -3,6 +3,8 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from typing import List, Tuple
 import pyperclip
@@ -19,9 +21,12 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
         chrome_options = Options()
         chrome_options.add_argument('--headless')  # Run in headless mode
         chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--no-sandbox')  # Required for Linux/Streamlit Cloud
+        chrome_options.add_argument('--disable-dev-shm-usage')  # Avoid memory issues
         chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         
-        driver = webdriver.Chrome(options=chrome_options)
+        # Use webdriver-manager to handle ChromeDriver
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         driver.set_page_load_timeout(30)  # Set timeout to 30 seconds
         
         # Load the webpage
