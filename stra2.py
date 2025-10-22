@@ -12,7 +12,9 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
     Returns total count, per-level counts, list of (tag, text) for structure, page title, status code, meta description, and keyword counts.
     """
     try:
-        response = requests.get(url, timeout=10)
+        # Add User-Agent to mimic a browser and increase timeout to 20 seconds
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, timeout=20, headers=headers)
         response.raise_for_status()
         status_code = response.status_code
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -115,7 +117,7 @@ if st.button("Analyze Headings"):
         
         with st.spinner("Analyzing URLs..."):
             for url in urls:
-                total, counts, struct, page_title, status_code, meta_desc, keyword_counts = get_headings(url, keywords if enable_keyword_search else None)
+                total, counts, structure, page_title, status_code, meta_desc, keyword_counts = get_headings(url, keywords if enable_keyword_search else None)
                 row = {
                     "URL": url,
                     "Title": page_title,
@@ -136,7 +138,7 @@ if st.button("Analyze Headings"):
                         row[keyword] = keyword_counts.get(keyword, 0)
                 
                 data.append(row)
-                structures[url] = struct
+                structures[url] = structure
         
         st.session_state['results'] = {'data': data, 'structures': structures}
 
