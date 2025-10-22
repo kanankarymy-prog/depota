@@ -1,5 +1,7 @@
 streamlit
-requests
+requests[socks]
 beautifulsoup4
 pandas
 openpyxl
+cloudscraper
+pyperclip
