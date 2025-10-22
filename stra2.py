@@ -1,56 +1,32 @@
 import streamlit as st
 import pandas as pd
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.common.exceptions import TimeoutException, WebDriverException
+import requests
 from typing import List, Tuple
 import pyperclip
 import re
 import time
-import subprocess
-
-# Test Chrome installation
-def check_chrome_installation():
-    try:
-        result = subprocess.run(['google-chrome', '--version'], capture_output=True, text=True)
-        st.write(f"Google Chrome version: {result.stdout.strip()}")
-        return True
-    except Exception as e:
-        st.error(f"Google Chrome not installed or not accessible: {str(e)}")
-        return False
 
 def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[Tuple[str, str]], str, int, str, dict]:
     """
-    Fetch the webpage using Selenium and extract headings, title, HTTP status code, meta description, and keyword counts.
-    Returns total count, per-level counts, list of (tag, text) for structure, page title, status code, meta description, and keyword counts.
+    Fetch the webpage using requests with proxy and extract headings, title, HTTP status code, meta description, and keyword counts.
     """
     try:
-        # Set up Selenium with Chrome in headless mode
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
+        # Set up headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+        }
+        # Set up proxy (replace with your proxy details or comment out if not using)
+        proxies = {
+            # Example: "http": "http://your_proxy_ip:port",
+            # "https": "http://your_proxy_ip:port"
+        }
         
-        # Use webdriver-manager to handle ChromeDriver
-        st.write("Initializing ChromeDriver...")
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        driver.set_page_load_timeout(30)
-        
-        # Load the webpage
         st.write(f"Attempting to fetch {url}...")
-        driver.get(url)
-        
-        # Get HTTP status code (Selenium doesn't provide this directly, so we assume 200 if page loads)
-        status_code = 200
-        
-        # Get page source and parse with BeautifulSoup
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        driver.quit()
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
+        response.raise_for_status()
+        status_code = response.status_code
+        soup = BeautifulSoup(response.text, 'html.parser')
         
         headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
         page_title = soup.find('title').text.strip() if soup.find('title') else "No Title"
@@ -69,7 +45,6 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
                 total += 1
                 structure.append((tag, h.text.strip()))
         
-        # Count keywords if provided
         keyword_counts = {}
         if keywords:
             text_content = soup.get_text().lower()
@@ -79,20 +54,12 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
                     count = len(re.findall(pattern, text_content))
                     keyword_counts[keyword] = count
         
-        # Add a 1-second delay to avoid rate-limiting
         time.sleep(1)
-        
         st.write(f"Successfully fetched {url}")
         return total, counts, structure, page_title, status_code, meta_desc, keyword_counts
     
-    except TimeoutException as e:
-        st.error(f"Timeout error fetching {url}: {str(e)}")
-        return 0, {}, [], "Error", 0, "Error", {}
-    except WebDriverException as e:
-        st.error(f"WebDriver error fetching {url}: {str(e)}")
-        return 0, {}, [], "Error", 0, "Error", {}
-    except Exception as e:
-        st.error(f"Unexpected error fetching {url}: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching {url}: {str(e)}")
         return 0, {}, [], "Error", 0, "Error", {}
 
 def build_tree(structure: List[Tuple[str, str]]) -> str:
@@ -117,18 +84,8 @@ st.set_page_config(layout="centered")
 st.title("Best Tools")
 st.markdown("Enter multiple URLs (one per line) or upload an Excel file with URLs in column A to analyze their headings. This tool fetches webpages, counts headings, provides a tree view with copy functionality, HTTP status, and meta description.")
 
-# Check Chrome installation
-st.write("Checking Google Chrome installation...")
-if not check_chrome_installation():
-    st.error("Please ensure Google Chrome is installed via packages.txt and try again.")
-
-# Text area for manual URLs
 urls_input = st.text_area("URLs (one per line):", height=200)
-
-# File uploader for Excel
 uploaded_file = st.file_uploader("Upload Excel file (.xlsx):", type=["xlsx"])
-
-# Keyword search option
 enable_keyword_search = st.checkbox("Enable keyword search")
 
 keywords = []
@@ -141,11 +98,9 @@ if enable_keyword_search:
 if st.button("Analyze Headings"):
     urls = []
     
-    # Process manual input
     if urls_input:
         urls = [u.strip() for u in urls_input.split("\n") if u.strip()]
     
-    # Process uploaded Excel
     if uploaded_file:
         try:
             df_uploaded = pd.read_excel(uploaded_file)
