@@ -19,15 +19,15 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
     try:
         # Set up Selenium with Chrome in headless mode
         chrome_options = Options()
-        chrome_options.add_argument('--headless')  # Run in headless mode
+        chrome_options.add_argument('--headless')
         chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--no-sandbox')  # Required for Linux/Streamlit Cloud
-        chrome_options.add_argument('--disable-dev-shm-usage')  # Avoid memory issues
-        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
         
         # Use webdriver-manager to handle ChromeDriver
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        driver.set_page_load_timeout(30)  # Set timeout to 30 seconds
+        driver.set_page_load_timeout(30)
         
         # Load the webpage
         st.write(f"Attempting to fetch {url}...")
@@ -38,7 +38,7 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
         
         # Get page source and parse with BeautifulSoup
         soup = BeautifulSoup(driver.page_source, 'html.parser')
-        driver.quit()  # Close the browser
+        driver.quit()
         
         headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
         page_title = soup.find('title').text.strip() if soup.find('title') else "No Title"
@@ -63,7 +63,6 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
             text_content = soup.get_text().lower()
             for keyword in keywords:
                 if keyword.strip():
-                    # Count occurrences using regex for whole words
                     pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
                     count = len(re.findall(pattern, text_content))
                     keyword_counts[keyword] = count
@@ -86,7 +85,7 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
 
 def build_tree(structure: List[Tuple[str, str]]) -> str:
     """
-    Build a indented tree representation of headings.
+    Build an indented tree representation of headings.
     Uses indentation to show nesting based on levels.
     """
     if not structure:
@@ -120,7 +119,7 @@ if enable_keyword_search:
     st.info("Enter up to 5 keywords to search for in the pages (one per line)")
     keyword_input = st.text_area("Keywords:", height=100, placeholder="Enter one keyword per line\nExample:\nseo\ndigital marketing\nweb analytics")
     if keyword_input:
-        keywords = [k.strip() for k in keyword_input.split("\n") if k.strip()][:5]  # Limit to 5 keywords
+        keywords = [k.strip() for k in keyword_input.split("\n") if k.strip()][:5]
 
 if st.button("Analyze Headings"):
     urls = []
@@ -138,7 +137,7 @@ if st.button("Analyze Headings"):
             else:
                 st.warning("No column 'A' found in the Excel file. Using the first column instead.")
                 urls.extend(df_uploaded.iloc[:, 0].dropna().astype(str).tolist())
-            urls = list(set(urls))  # Remove duplicates
+            urls = list(set(urls))
         except Exception as e:
             st.error(f"Error reading Excel file: {str(e)}")
     
@@ -165,7 +164,6 @@ if st.button("Analyze Headings"):
                     "H6": counts.get("H6", 0)
                 }
                 
-                # Add keyword counts to row if enabled
                 if enable_keyword_search and keywords:
                     for keyword in keywords:
                         row[keyword] = keyword_counts.get(keyword, 0)
