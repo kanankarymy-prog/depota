@@ -1,23 +1,40 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
 import pandas as pd
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from typing import List, Tuple
 import pyperclip
 import re
+import time
 
 def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[Tuple[str, str]], str, int, str, dict]:
     """
-    Fetch the webpage and extract headings, title, HTTP status code, meta description, and keyword counts.
+    Fetch the webpage using Selenium and extract headings, title, HTTP status code, meta description, and keyword counts.
     Returns total count, per-level counts, list of (tag, text) for structure, page title, status code, meta description, and keyword counts.
     """
     try:
-        # Add User-Agent to mimic a browser and increase timeout to 20 seconds
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, timeout=20, headers=headers)
-        response.raise_for_status()
-        status_code = response.status_code
-        soup = BeautifulSoup(response.text, 'html.parser')
+        # Set up Selenium with Chrome in headless mode
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')  # Run in headless mode
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+        
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.set_page_load_timeout(30)  # Set timeout to 30 seconds
+        
+        # Load the webpage
+        st.write(f"Attempting to fetch {url}...")
+        driver.get(url)
+        
+        # Get HTTP status code (Selenium doesn't provide this directly, so we assume 200 if page loads)
+        status_code = 200
+        
+        # Get page source and parse with BeautifulSoup
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        driver.quit()  # Close the browser
+        
         headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
         page_title = soup.find('title').text.strip() if soup.find('title') else "No Title"
         
@@ -46,10 +63,21 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
                     count = len(re.findall(pattern, text_content))
                     keyword_counts[keyword] = count
         
+        # Add a 1-second delay to avoid rate-limiting
+        time.sleep(1)
+        
+        st.write(f"Successfully fetched {url}")
         return total, counts, structure, page_title, status_code, meta_desc, keyword_counts
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching {url}: {str(e)}")
-        return 0, {}, [], "Error", getattr(e.response, 'status_code', 0), "Error", {}
+    
+    except TimeoutException as e:
+        st.error(f"Timeout error fetching {url}: {str(e)}")
+        return 0, {}, [], "Error", 0, "Error", {}
+    except WebDriverException as e:
+        st.error(f"WebDriver error fetching {url}: {str(e)}")
+        return 0, {}, [], "Error", 0, "Error", {}
+    except Exception as e:
+        st.error(f"Unexpected error fetching {url}: {str(e)}")
+        return 0, {}, [], "Error", 0, "Error", {}
 
 def build_tree(structure: List[Tuple[str, str]]) -> str:
     """
@@ -69,8 +97,8 @@ def build_tree(structure: List[Tuple[str, str]]) -> str:
     
     return tree
 
-st.set_page_config(layout="centered")  # Centered layout to make input narrower
-st.title("Heading Analyzer Tool")
+st.set_page_config(layout="centered")
+st.title("Best Tools")
 st.markdown("Enter multiple URLs (one per line) or upload an Excel file with URLs in column A to analyze their headings. This tool fetches webpages, counts headings, provides a tree view with copy functionality, HTTP status, and meta description.")
 
 # Text area for manual URLs
@@ -100,12 +128,12 @@ if st.button("Analyze Headings"):
     if uploaded_file:
         try:
             df_uploaded = pd.read_excel(uploaded_file)
-            if 'A' in df_uploaded.columns:  # Assuming column A is labeled as 'A' or first column
+            if 'A' in df_uploaded.columns:
                 urls.extend(df_uploaded['A'].dropna().astype(str).tolist())
             else:
                 st.warning("No column 'A' found in the Excel file. Using the first column instead.")
                 urls.extend(df_uploaded.iloc[:, 0].dropna().astype(str).tolist())
-            urls = list(set(urls))  # Remove duplicates if any
+            urls = list(set(urls))  # Remove duplicates
         except Exception as e:
             st.error(f"Error reading Excel file: {str(e)}")
     
@@ -145,7 +173,7 @@ if st.button("Analyze Headings"):
 if 'results' in st.session_state and st.session_state['results'].get('data'):
     df = pd.DataFrame(st.session_state['results']['data'])
     st.subheader("Headings Summary Table")
-    st.dataframe(df, use_container_width=True, height=400)  # Larger table height
+    st.dataframe(df, use_container_width=True, height=400)
     
     st.subheader("Tree Views")
     structures = st.session_state['results']['structures']
