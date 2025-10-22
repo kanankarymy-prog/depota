@@ -10,6 +10,17 @@ from typing import List, Tuple
 import pyperclip
 import re
 import time
+import subprocess
+
+# Test Chrome installation
+def check_chrome_installation():
+    try:
+        result = subprocess.run(['google-chrome', '--version'], capture_output=True, text=True)
+        st.write(f"Google Chrome version: {result.stdout.strip()}")
+        return True
+    except Exception as e:
+        st.error(f"Google Chrome not installed or not accessible: {str(e)}")
+        return False
 
 def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[Tuple[str, str]], str, int, str, dict]:
     """
@@ -26,6 +37,7 @@ def get_headings(url: str, keywords: List[str] = None) -> Tuple[int, dict, List[
         chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
         
         # Use webdriver-manager to handle ChromeDriver
+        st.write("Initializing ChromeDriver...")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         driver.set_page_load_timeout(30)
         
@@ -104,6 +116,11 @@ def build_tree(structure: List[Tuple[str, str]]) -> str:
 st.set_page_config(layout="centered")
 st.title("Best Tools")
 st.markdown("Enter multiple URLs (one per line) or upload an Excel file with URLs in column A to analyze their headings. This tool fetches webpages, counts headings, provides a tree view with copy functionality, HTTP status, and meta description.")
+
+# Check Chrome installation
+st.write("Checking Google Chrome installation...")
+if not check_chrome_installation():
+    st.error("Please ensure Google Chrome is installed via packages.txt and try again.")
 
 # Text area for manual URLs
 urls_input = st.text_area("URLs (one per line):", height=200)
