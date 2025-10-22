@@ -1,5 +1,7 @@
-streamlit
-beautifulsoup4
-requests
-pandas
-lxml
+streamlit==1.31.1
+pandas==2.2.3
+beautifulsoup4==4.12.3
+selenium==4.26.1
+pyperclip==1.9.0
+openpyxl==3.1.5
+webdriver-manager==4.0.2
